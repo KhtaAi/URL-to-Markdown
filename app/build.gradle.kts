@@ -14,8 +14,8 @@ android {
     applicationId = "com.kh_tarimoradi.urltomarkdown"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0.0"
+    versionCode = 2
+    versionName = "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -139,3 +139,27 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+val buildDirProvider = layout.buildDirectory
+
+tasks.register("copyUniversalToDebug") {
+  val buildDir = buildDirProvider
+  doLast {
+    val debugDir = buildDir.get().asFile.resolve("outputs/apk/debug")
+    val universalApk = debugDir.resolve("app-universal-debug.apk")
+    val standardDebugApk = debugDir.resolve("app-debug.apk")
+    if (universalApk.exists()) {
+      universalApk.copyTo(standardDebugApk, overwrite = true)
+      println("Successfully copied $universalApk to $standardDebugApk")
+    } else {
+      println("Universal APK not found at $universalApk")
+    }
+  }
+}
+
+tasks.configureEach {
+  if (name == "assembleDebug") {
+    finalizedBy("copyUniversalToDebug")
+  }
+}
+

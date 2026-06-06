@@ -66,7 +66,8 @@ sealed interface CrawlUiState {
         val foundLinks: List<String>,
         val currentIndex: Int,
         val total: Int,
-        val logs: List<String>
+        val logs: List<String>,
+        val errorMessage: String = ""
     ) : CrawlUiState
 }
 
@@ -93,13 +94,11 @@ data class ScraperConfig(
     val maxPageLimit: Int = 30,
     val excludeKeywords: String = "logout,login,signin,signout,signup,register,admin,dashboard,profile,account,cart,checkout,buy,pay,basket,billing,pricing,feedback,contact,support,help,faq,search,terms,privacy,cookie,policy,share,rss,feed,subscribe,newsletter",
     val noImages: Boolean = true,
-    val withLinksSummary: Boolean = true,
     val noCookies: Boolean = true,
     val appLanguage: String = "en",
     val deepScrape: Boolean = false,
     val targetSelector: String = "",
     val removeSelector: String = "",
-    val withImagesSummary: Boolean = false,
     val returnFormat: String = "markdown"
 )
 
@@ -312,6 +311,8 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                     val visualIndex = index + 1
                     var attemptSuccess = false
                     var skipLink = false
+                    val attemptStartTime = System.currentTimeMillis()
+                    var lastErrorDetails = ""
                     
                     while (!attemptSuccess && !skipLink) {
                         if (!isActive) {
@@ -380,17 +381,19 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                                     downloadSuccess = true
                                     logMsg("✅ Webpage download response success index [$visualIndex] (via Local fallback JSoup)")
                                 } else {
+                                    lastErrorDetails = "Local fallback got too short content (Too short) / محتوای استخراج‌شده محلی بسیار کوتاه یا نامعتبر است"
                                     logMsg("❌ Local fallback got too short content for index [$visualIndex]")
                                 }
                             } catch (e: Exception) {
                                 val errType = e.javaClass.name
                                 val errDetail = when {
-                                    errType.contains("HttpStatusException") -> "HTTP Status Error (Target server returned an error status code)"
-                                    errType.contains("UnsupportedMimeTypeException") -> "Unsupported media type (Target page contents might be PDF/binary instead of HTML)"
-                                    e is java.net.UnknownHostException -> "DNS Resolution Failure (Could not resolve website host address)"
-                                    e is java.net.SocketTimeoutException -> "Local Connection Timeout (Target host is too slow to load or down)"
+                                    errType.contains("HttpStatusException") -> "HTTP Status Error (Target server returned an error status code) / خطای وضعیت وب‌سایت مقصد"
+                                    errType.contains("UnsupportedMimeTypeException") -> "Unsupported media type (Target page contents might be PDF/binary instead of HTML) / فرمت نامعتبر محتوا"
+                                    e is java.net.UnknownHostException -> "DNS Resolution Failure (Could not resolve website host address) / عدم امکان اتصال به سرور مقصد"
+                                    e is java.net.SocketTimeoutException -> "Local Connection Timeout (Target host is too slow to load or down) / اتمام زمان ارتباط محلی"
                                     else -> e.localizedMessage ?: e.message ?: "Unknown Local Connection Error"
                                 }
+                                lastErrorDetails = errDetail
                                 logMsg("❌ Local fallback failed: $errDetail for index [$visualIndex]")
                             }
                         } else {
@@ -405,20 +408,16 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                                     requestBuilder.header("Authorization", "Bearer ${currentConfig.jinaApiKey.trim()}")
                                 }
                                 if (currentConfig.noImages) {
-                                    if (!currentConfig.withImagesSummary) {
-                                        requestBuilder.header("X-Retain-Images", "none")
-                                    }
+                                    requestBuilder.header("X-Retain-Images", "none")
                                 }
-                                requestBuilder.header("X-With-Links-Summary", if (currentConfig.withLinksSummary) "true" else "false")
+                                requestBuilder.header("X-With-Links-Summary", "false")
+                                requestBuilder.header("X-With-Images-Summary", "false")
                                 requestBuilder.header("X-No-Cookies", if (currentConfig.noCookies) "true" else "false")
                                 if (currentConfig.targetSelector.isNotBlank()) {
                                     requestBuilder.header("X-Target-Selector", currentConfig.targetSelector.trim())
                                 }
                                 if (currentConfig.removeSelector.isNotBlank()) {
                                     requestBuilder.header("X-Remove-Selector", currentConfig.removeSelector.trim())
-                                }
-                                if (currentConfig.withImagesSummary) {
-                                    requestBuilder.header("X-With-Images-Summary", "true")
                                 }
                                 val requestedFormat = when (currentConfig.returnFormat.trim().lowercase()) {
                                     "xml" -> "markdown"
@@ -438,84 +437,112 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                                         downloadSuccess = true
                                         logMsg("✅ Webpage download response success index [$visualIndex] (via Jina)")
                                     } else {
+                                        lastErrorDetails = "Empty response from Jina Reader / پاسخ دریافتی از سرور Jina خالی است"
                                         logMsg("⚠ Jina empty response for index [$visualIndex]")
                                     }
                                 } else {
                                     val errorExplanation = when (response.code) {
-                                        400 -> "Bad Request (Server could not parse Jina query parameters)"
-                                        401, 403 -> "Unauthorized/Forbidden (Invalid Jina API Key, or request blocked by Cloudflare/Target Web Host)"
-                                        402 -> "Payment Required (Jina API balance empty or credit exhausted)"
-                                        404 -> "Not Found (The target page link does not exist anymore)"
-                                        422 -> "Unprocessable Entity (Failed to render Javascript or read webpage content)"
-                                        429 -> "Too Many Requests (Jina Rate limit hit! Try adding a Jina API key or choosing Custom Delay in settings to solve this)"
-                                        500 -> "Internal Server Error (Jina server code crash on this website layout)"
-                                        502 -> "Bad Gateway (Jina backend was unable to reach target host)"
-                                        503 -> "Service Unavailable (Jina Reader is currently overloaded or down)"
-                                        504 -> "Gateway Timeout (Jina timeout waiting for remote host response)"
-                                        else -> "HTTP status error"
+                                        400 -> "Bad Request (Jina parameter error) / پارامتر غیرمجاز جی‌نا"
+                                        401, 403 -> "Unauthorized/Forbidden (API Key or Cloudflare blocked) / عدم دسترسی یا خطای کلید امنیتی"
+                                        402 -> "Payment Required (No balance) / نیاز به شارژ حساب Jina"
+                                        404 -> "Not Found (Webpage not found) / صفحه مورد نظر پیدا نشد"
+                                        422 -> "Unprocessable Entity (Failed rendering) / خطا در رندر و پردازش صفحه"
+                                        429 -> "Too Many Requests (Rate limit) / خطای محدودیت تعداد درخواست"
+                                        451 -> "Unavailable For Legal Reasons (Content Blocked) / مسدود به دلایل حقوقی یا کپی‌رایت"
+                                        500 -> "Internal Server Error (Jina crashed) / خطای داخلی سرور"
+                                        502 -> "Bad Gateway (Remote unreachable) / خطا در برقراری ارتباط با مقصد"
+                                        503 -> "Service Unavailable / سرور جی‌نا موقتاً در دسترس نیست"
+                                        504 -> "Gateway Timeout (Timeout) / اتمام زمان ارتباط با سایت مرجع"
+                                        else -> "HTTP status error ${response.code}"
                                     }
-                                    logMsg("⚠ Jina returned HTTP status ${response.code}: $errorExplanation for [$visualIndex]")
+                                    val errBody = try { response.body?.string()?.take(120)?.trim() } catch (ignored: Exception) { null }
+                                    val formattedRaw = if (!errBody.isNullOrBlank()) " ($errBody)" else ""
+                                    lastErrorDetails = "HTTP ${response.code}: $errorExplanation$formattedRaw"
                                     
-                                    val errBody = try { response.body?.string() } catch (ignored: Exception) { null }
+                                    logMsg("⚠ Jina returned HTTP status ${response.code}: $errorExplanation for [$visualIndex]")
                                     if (!errBody.isNullOrBlank()) {
-                                        logMsg("📝 Raw Jina Service Message: ${errBody.take(150)}")
+                                        logMsg("📝 Raw Jina Service Message: $errBody")
                                     }
                                 }
                             } catch (e: Exception) {
                                 val errDetail = when (e) {
-                                    is java.net.UnknownHostException -> "DNS Resolution Failure (Check device internet connection or Jina API endpoint accessibility)"
-                                    is java.net.SocketTimeoutException -> "Request Timed Out (Jina Reader server or gateway took too long to compile detailed markdown)"
-                                    is javax.net.ssl.SSLHandshakeException -> "SSL Handshake Failed (Secure TLS handshake failed with Jina APIs or certificates untrusted)"
-                                    is java.net.ConnectException -> "Connection Refused (Device cannot establish connection to Jina endpoints)"
+                                    is java.net.UnknownHostException -> "DNS/Network Failure (Check connection) / خطای آدرس شبکه‌ یا قطع اینترنت"
+                                    is java.net.SocketTimeoutException -> "Request Timed Out (Jina slow) / اتمام زمان پاسخ‌دهی سرور"
+                                    is javax.net.ssl.SSLHandshakeException -> "SSL Handshake Failed / خطای گواهی فایروال یا اتصال امن"
+                                    is java.net.ConnectException -> "Connection Refused / رد ارتباط از سمت میزبان"
                                     else -> e.localizedMessage ?: e.message ?: "Unknown Connection Exception"
                                 }
+                                lastErrorDetails = errDetail
                                 logMsg("⚠ Jina Reader offline or connection issue: $errDetail")
                             }
                         }
                         
                         if (downloadSuccess && pageContent.isNotBlank()) {
+                            val processedPageContent = if (currentConfig.noImages) {
+                                sanitizeAndRemoveImages(pageContent, currentConfig.returnFormat)
+                            } else {
+                                pageContent
+                            }
                             combinedBuilder.append("\n\n\n")
                             combinedBuilder.append("=========================================\n")
                             combinedBuilder.append("# Source: $currentLink\n")
                             combinedBuilder.append("=========================================\n\n")
-                            combinedBuilder.append(pageContent)
+                            combinedBuilder.append(processedPageContent)
                             combinedBuilder.append("\n\n---")
                             
-                            pagesList.add(ScrapedPage(index = visualIndex, url = currentLink, content = pageContent))
+                            pagesList.add(ScrapedPage(index = visualIndex, url = currentLink, content = processedPageContent))
                             attemptSuccess = true
                         } else {
                             if (forceLocalFallback) {
                                 logMsg("❌ Forced Local fallback also failed for index [$visualIndex]. Skipping page.")
                                 skipLink = true
                             } else {
-                                logMsg("❓ Pipeline suspended on [$visualIndex/$totalCount]. Waiting for user command...")
-                                val deferred = CompletableDeferred<FallbackChoice>()
-                                fallbackChoiceDeferred = deferred
-                                
-                                _uiState.value = CrawlUiState.WaitingForFallback(
-                                    baseUrl = cleanUrl,
-                                    currentLink = currentLink,
-                                    foundLinks = finalLinks,
-                                    currentIndex = index,
-                                    total = totalCount,
-                                    logs = logsList.toList()
-                                )
-                                
-                                val choice = deferred.await()
-                                fallbackChoiceDeferred = null
-                                
-                                when (choice) {
-                                    FallbackChoice.RETRY -> {
-                                        logMsg("🔄 Command: [Retry Jina]. Re-evaluating Jina connection for index [$visualIndex]...")
-                                    }
-                                    FallbackChoice.USE_LOCAL_ALL -> {
-                                        logMsg("🔄 Command: [Force Local Fallback]. Switching completely to Jsoup for remaining pages...")
-                                        forceLocalFallback = true
-                                    }
-                                    FallbackChoice.CANCEL -> {
-                                        logMsg("❌ Command: [Cancel]. Aborting crawl sequence dynamically...")
-                                        _uiState.value = CrawlUiState.Idle
-                                        return@launch
+                                val elapsedMs = System.currentTimeMillis() - attemptStartTime
+                                val oneMinuteMs = 60_000L
+                                if (elapsedMs < oneMinuteMs) {
+                                    val remainingMs = oneMinuteMs - elapsedMs
+                                    val remainingSec = (remainingMs / 1000).toInt()
+                                    val sleepSec = 5
+                                    
+                                    logMsg("⏳ Autoretry count-down: Reconnecting Jina in $sleepSec seconds... (Elapsed: ${(elapsedMs/1000)}s - Automatic retries stop in ${remainingSec}s)")
+                                    logMsg("⏳ تلاش مجدد خودکار: تلاش برای برقراری مجدد ارتباط با جی‌نا در $sleepSec ثانیه دیگر... (زمان سپری‌شده: ${(elapsedMs/1000)} ثانیه - اتمام تلاش‌های خودکار در $remainingSec ثانیه)")
+                                    
+                                    val actualSleepMs = minOf(sleepSec * 1000L, remainingMs)
+                                    delay(actualSleepMs)
+                                } else {
+                                    logMsg("❓ Pipeline suspended on [$visualIndex/$totalCount] after retrying for 1 minute.")
+                                    logMsg("📝 Reason / علت خطا: $lastErrorDetails")
+                                    logMsg("Waiting for user command...")
+                                    
+                                    val deferred = CompletableDeferred<FallbackChoice>()
+                                    fallbackChoiceDeferred = deferred
+                                    
+                                    _uiState.value = CrawlUiState.WaitingForFallback(
+                                        baseUrl = cleanUrl,
+                                        currentLink = currentLink,
+                                        foundLinks = finalLinks,
+                                        currentIndex = index,
+                                        total = totalCount,
+                                        logs = logsList.toList(),
+                                        errorMessage = lastErrorDetails
+                                    )
+                                    
+                                    val choice = deferred.await()
+                                    fallbackChoiceDeferred = null
+                                    
+                                    when (choice) {
+                                        FallbackChoice.RETRY -> {
+                                            logMsg("🔄 Command: [Retry Jina]. Re-evaluating Jina connection for index [$visualIndex]...")
+                                        }
+                                        FallbackChoice.USE_LOCAL_ALL -> {
+                                            logMsg("🔄 Command: [Force Local Fallback]. Switching completely to Jsoup for remaining pages...")
+                                            forceLocalFallback = true
+                                        }
+                                        FallbackChoice.CANCEL -> {
+                                            logMsg("❌ Command: [Cancel]. Aborting crawl sequence dynamically...")
+                                            _uiState.value = CrawlUiState.Idle
+                                            return@launch
+                                        }
                                     }
                                 }
                             }
@@ -628,7 +655,13 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
                 
-                val savedUri = saveMarkdownToDownloads(getApplication<Application>(), fileName, finalFileContent)
+                val finalFileContentCleaned = if (currentConfig.noImages) {
+                    sanitizeAndRemoveImages(finalFileContent, currentConfig.returnFormat)
+                } else {
+                    finalFileContent
+                }
+                
+                val savedUri = saveMarkdownToDownloads(getApplication<Application>(), fileName, finalFileContentCleaned)
                 
                 if (savedUri != null) {
                     logMsg("✅ Compilation completed successfully.")
@@ -642,15 +675,15 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                     totalConverted = totalCount,
                     savedUri = savedUri,
                     fileName = fileName,
-                    fullContent = finalFileContent,
+                    fullContent = finalFileContentCleaned,
                     logs = logsList.toList()
                 )
                 
                 val newExtraction = RecentExtractionItem(
                     fileName = fileName,
                     timeAgo = "Just now",
-                    sizeString = "%.1f KB".format(finalFileContent.length / 1024.0),
-                    fullContent = finalFileContent,
+                    sizeString = "%.1f KB".format(finalFileContentCleaned.length / 1024.0),
+                    fullContent = finalFileContentCleaned,
                     sourceUrl = cleanUrl,
                     savedUri = savedUri?.toString()
                 )
@@ -752,6 +785,47 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun sanitizeAndRemoveImages(content: String, format: String): String {
+        val isRtlText = isPersianText(content)
+        val imageLabel = if (isRtlText) "تصویر" else "Image"
+        
+        var result = content
+        
+        // 1. Clean HTML <img ...> tags
+        try {
+            val htmlImageRegex = """(?i)<img\s+[^>]*>""".toRegex()
+            result = result.replace(htmlImageRegex) { matchResult ->
+                val imgTag = matchResult.value
+                val altMatch = """(?i)\balt\s*=\s*["']([^"']*)["']""".toRegex().find(imgTag)
+                val altText = altMatch?.groupValues?.get(1)?.trim() ?: ""
+                if (altText.isNotEmpty()) {
+                    "[$imageLabel: $altText]"
+                } else {
+                    "[$imageLabel]"
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        // 2. Clean Markdown ![alt](url) tags with the original extremely robust regex
+        try {
+            val markdownImageRegex = """!\[(.*?)\]\((.*?)\)""".toRegex()
+            result = result.replace(markdownImageRegex) { matchResult ->
+                val altText = matchResult.groupValues[1].trim()
+                if (altText.isNotEmpty()) {
+                    "[$imageLabel: $altText]"
+                } else {
+                    "[$imageLabel]"
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        return result
+    }
+
     private fun isPersianText(text: String): Boolean {
         val persianPattern = Regex("[\\u0600-\\u06FF]+")
         return persianPattern.containsMatchIn(text)
@@ -766,13 +840,11 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
         obj.put("maxPageLimit", c.maxPageLimit)
         obj.put("excludeKeywords", c.excludeKeywords)
         obj.put("noImages", c.noImages)
-        obj.put("withLinksSummary", c.withLinksSummary)
         obj.put("noCookies", c.noCookies)
         obj.put("appLanguage", c.appLanguage)
         obj.put("deepScrape", c.deepScrape)
         obj.put("targetSelector", c.targetSelector)
         obj.put("removeSelector", c.removeSelector)
-        obj.put("withImagesSummary", c.withImagesSummary)
         obj.put("returnFormat", c.returnFormat)
         return obj.toString()
     }
@@ -787,13 +859,11 @@ class ScraperViewModel(application: Application) : AndroidViewModel(application)
                 maxPageLimit = obj.optInt("maxPageLimit", 30),
                 excludeKeywords = obj.optString("excludeKeywords", "logout,login,signin,signout,signup,register,admin,dashboard,profile,account,cart,checkout,buy,pay,basket,billing,pricing,feedback,contact,support,help,faq,search,terms,privacy,cookie,policy,share,rss,feed,subscribe,newsletter"),
                 noImages = obj.optBoolean("noImages", true),
-                withLinksSummary = obj.optBoolean("withLinksSummary", true),
                 noCookies = obj.optBoolean("noCookies", true),
                 appLanguage = obj.optString("appLanguage", "en"),
                 deepScrape = obj.optBoolean("deepScrape", false),
                 targetSelector = obj.optString("targetSelector", ""),
                 removeSelector = obj.optString("removeSelector", ""),
-                withImagesSummary = obj.optBoolean("withImagesSummary", false),
                 returnFormat = obj.optString("returnFormat", "markdown")
             )
         } catch (e: Exception) { ScraperConfig() }

@@ -108,18 +108,13 @@ fun t(key: String, lang: String): String {
             "output_settings" -> "تنظیمات استخراج و حریم خصوصی"
             "ignore_images" -> "حذف تمامی عکس‌های وب‌سایت (No Images)"
             "ignore_images_desc" -> "جلوگیری از درج تگ‌های تصاویر در خروجی مارک‌داون جهت بهینه‌سازی شدید حجم فایل."
-            "add_links_summary" -> "افزودن لیست خلاصه لینک‌ها در انتها"
-            "add_links_summary_desc" -> "اضافه کردن لیست یا رفرنس تمام پیوندهای استخراج شده در انتهای فایل."
             "disable_cookies" -> "غیرفعال‌سازی کوکی‌های مرورگر (No Cookies)"
-            "disable_cookies_desc" -> "عدم دریافت و ذخیره اطلاعات ردگیر کوکی صفحات حین واکشی برای افزایش حریم خصوصی."
             "jina_advanced" -> "تنظیمات پیشرفته Jina (CSS Selectors)"
             "jina_advanced_desc" -> "تنظیمات اختصاصی Jina برای استخراج دقیق‌تر و حرفه‌ای‌تر بخش‌های خاص صفحات وب."
             "target_selector_title" -> "انتخابگر بخش هدف (Target CSS Selector):"
             "target_selector_desc" -> "فقط عناصر منطبق با این انتخابگر CSS استخراج شوند (مانند article یا .main). خالی یعنی کل صفحه."
             "remove_selector_title" -> "حذف عناصر با بخش انتخابگر (Remove CSS Selector):"
             "remove_selector_desc" -> "عناصر منطبق با این انتخابگر از خروجی حذف شوند (مانند .comments,.ads,footer)."
-            "with_images_summary" -> "افزودن لیست خلاصه تصاویر در انتها"
-            "with_images_summary_desc" -> "افزودن تگ‌ها و آدرس تصاویر پیدا شده در صفحه به صورت خلاصه در انتهای فایل."
             "auto_throttle_desc" -> "پیش‌فرض هوشمند. محاسبه پویای تأخیر بر حسب تعداد صفحات برای تضمین سلامت سیستم بدون مسدود شدن آی‌پی."
             "custom_delay_desc" -> "تعیین تأخیر زمانی مشخص بین پردازش هر کدام از لینک‌های فرعی وب‌سایت."
             "burst_mode_desc" -> "عملکرد بدون وقفه و فوق‌العاده سریع. این حالت پیشنهاد می‌شود حتماً با API Key اختصاصی اجرا شود."
@@ -192,18 +187,13 @@ fun t(key: String, lang: String): String {
             "output_settings" -> "Extraction & Privacy Settings"
             "ignore_images" -> "Ignore all images (No Images)"
             "ignore_images_desc" -> "Prevents loading/injecting images into Markdown output to save file size."
-            "add_links_summary" -> "Add links summary at the end"
-            "add_links_summary_desc" -> "Appends a clean numbered list of reference URLs at the end of the markdown."
             "disable_cookies" -> "Disable browser tracking cookies (No Cookies)"
-            "disable_cookies_desc" -> "Enhances privacy by blocking page tracking cookies during the extraction process."
             "jina_advanced" -> "Advanced Jina Query Options"
             "jina_advanced_desc" -> "Target or remove specific webpage elements with CSS selectors for a super clean output."
             "target_selector_title" -> "Target CSS Selector:"
             "target_selector_desc" -> "Only extract HTML matching this selector (e.g. article, .main-content). Leave empty for whole page."
             "remove_selector_title" -> "Remove CSS Selector:"
             "remove_selector_desc" -> "Exclude HTML matching this selector (e.g. .comments, nav, footer, .ads)."
-            "with_images_summary" -> "Include image summary at the end"
-            "with_images_summary_desc" -> "Appends a neat summary panel of all discovered page images with alt labels at the end."
             "return_format_title" -> "Return Format:"
             "return_format_desc" -> "The output format requested from Jina Reader API."
             "auto_throttle_desc" -> "Smart default. Calculates delays dynamically based on page count to ensure smooth crawling without getting IP-blocked."
@@ -1009,6 +999,7 @@ fun UrlToMarkdownScreen(
                         FallbackDecisionPanel(
                             currentLink = state.currentLink,
                             appLanguage = config.appLanguage,
+                            errorMessage = state.errorMessage,
                             onRetry = { viewModel.respondToFallbackChoice(FallbackChoice.RETRY) },
                             onUseLocalAll = { viewModel.respondToFallbackChoice(FallbackChoice.USE_LOCAL_ALL) },
                             onCancel = { viewModel.respondToFallbackChoice(FallbackChoice.CANCEL) }
@@ -1680,45 +1671,90 @@ fun SettingsAndScriptsScreen(
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    var isLangMenuExpanded by remember { mutableStateOf(false) }
+
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Persian Option
-                        Button(
-                            onClick = {
-                                viewModel.updateConfig(config.copy(appLanguage = "fa"))
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (config.appLanguage == "fa") MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.05f),
-                                contentColor = if (config.appLanguage == "fa") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (config.appLanguage == "fa") Color.Transparent else Color.White.copy(alpha = 0.1f)
-                            )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(12.dp))
+                                .clickable { isLangMenuExpanded = true }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("فارسی (FA)", fontWeight = FontWeight.Bold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = if (config.appLanguage == "en") "🇺🇸" else "🇮🇷",
+                                    fontSize = 18.sp
+                                )
+                                Text(
+                                    text = if (config.appLanguage == "fa") "فارسی (FA)" else "English (EN)",
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Dropdown Menu",
+                                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            )
                         }
-                        // English Option
-                        Button(
-                            onClick = {
-                                viewModel.updateConfig(config.copy(appLanguage = "en"))
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (config.appLanguage == "en") MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.05f),
-                                contentColor = if (config.appLanguage == "en") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (config.appLanguage == "en") Color.Transparent else Color.White.copy(alpha = 0.1f)
-                            )
+
+                        DropdownMenu(
+                            expanded = isLangMenuExpanded,
+                            onDismissRequest = { isLangMenuExpanded = false },
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(12.dp))
                         ) {
-                            Text("English (EN)", fontWeight = FontWeight.Bold)
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("🇺🇸", fontSize = 16.sp)
+                                        Text(
+                                            text = "English (EN)",
+                                            fontWeight = if (config.appLanguage == "en") FontWeight.Bold else FontWeight.Normal,
+                                            color = if (config.appLanguage == "en") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.updateConfig(config.copy(appLanguage = "en"))
+                                    isLangMenuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("🇮🇷", fontSize = 16.sp)
+                                        Text(
+                                            text = "فارسی (FA)",
+                                            fontWeight = if (config.appLanguage == "fa") FontWeight.Bold else FontWeight.Normal,
+                                            color = if (config.appLanguage == "fa") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.updateConfig(config.copy(appLanguage = "fa"))
+                                    isLangMenuExpanded = false
+                                }
+                            )
                         }
                     }
                 }
@@ -2104,17 +2140,6 @@ fun SettingsAndScriptsScreen(
                     HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                     Spacer(modifier = Modifier.height(12.dp))
                     ToggleRowItem(
-                        title = t("add_links_summary", config.appLanguage),
-                        description = t("add_links_summary_desc", config.appLanguage),
-                        isChecked = config.withLinksSummary,
-                        onCheckedChange = { newVal ->
-                            viewModel.updateConfig(config.copy(withLinksSummary = newVal))
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    ToggleRowItem(
                         title = t("disable_cookies", config.appLanguage),
                         description = t("disable_cookies_desc", config.appLanguage),
                         isChecked = config.noCookies,
@@ -2212,20 +2237,6 @@ fun SettingsAndScriptsScreen(
                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
                         )
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    // With Images Summary
-                    ToggleRowItem(
-                        title = t("with_images_summary", config.appLanguage),
-                        description = t("with_images_summary_desc", config.appLanguage),
-                        isChecked = config.withImagesSummary,
-                        onCheckedChange = { newVal ->
-                            viewModel.updateConfig(config.copy(withImagesSummary = newVal))
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                     Spacer(modifier = Modifier.height(16.dp))
                     // Return Format Selection
                     Text(
@@ -2718,6 +2729,7 @@ fun CodeBlockView(code: String) {
 fun FallbackDecisionPanel(
     currentLink: String,
     appLanguage: String,
+    errorMessage: String = "",
     onRetry: () -> Unit,
     onUseLocalAll: () -> Unit,
     onCancel: () -> Unit
@@ -2759,6 +2771,32 @@ fun FallbackDecisionPanel(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            
+            if (errorMessage.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Black.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text(
+                            text = if (appLanguage == "fa") "علت دقیق خطا:" else "Error Detail:",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             
             Row(
