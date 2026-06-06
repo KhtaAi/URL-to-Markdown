@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -50,7 +51,7 @@ jobs:
           cd app/build/outputs/apk/release
           for f in *.apk; do
             if [ -f "$f" ]; then
-              new_name=$(echo "$f" | sed 's/app-//' | sed 's/-release//' | sed 's/^/URL_to_Markdown_/')
+              new_name=$(echo "$f" | sed 's/app-//' | sed 's/-release//' | sed 's/^/WebMark_/')
               cp "$f" "$new_name"
             fi
           done
@@ -60,7 +61,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/release/URL_to_Markdown_*.apk
+            app/build/outputs/apk/release/WebMark_*.apk
           draft: false
           prerelease: false
         env:
