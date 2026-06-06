@@ -1,0 +1,6 @@
+{
+  "name": "WebMark",
+  "description": "Convert web URLs to beautifully formatted Markdown text.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

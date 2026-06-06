@@ -1,0 +1,67 @@
+name: Android CI & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build & Release split APKs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Decode Signature Keystore
+        run: |
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding release keystore..."
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
+          else
+            echo "RELEASE_KEYSTORE_BASE64 secret is missing. Auto-generating a fallback keystore..."
+            keytool -genkeypair -v -keystore my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass "${{ secrets.STORE_PASSWORD || 'android' }}" -keypass "${{ secrets.KEY_PASSWORD || 'android' }}" -dname "CN=Fallback, OU=Android, O=Google, L=Mountain View, S=California, C=US"
+          fi
+
+      - name: Build Split APKs
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: gradle assembleRelease
+
+      - name: Prepare APKs for Release
+        run: |
+          cd app/build/outputs/apk/release
+          for f in *.apk; do
+            if [ -f "$f" ]; then
+              new_name=$(echo "$f" | sed 's/app-//' | sed 's/-release//' | sed 's/^/URL_to_Markdown_/')
+              cp "$f" "$new_name"
+            fi
+          done
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/release/URL_to_Markdown_*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
